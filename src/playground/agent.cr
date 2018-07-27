@@ -1,7 +1,7 @@
 require "http"
 require "json"
 
-class Crystal::Playground::Agent
+class Playground::Agent
   @send_runtime = true
 
   def initialize(url, @tag : Int32)

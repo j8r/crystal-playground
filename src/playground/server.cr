@@ -3,9 +3,8 @@ require "tempfile"
 require "logger"
 require "ecr/macros"
 require "markdown"
-require "compiler/crystal/tools/formatter"
 
-module Crystal::Playground
+module Playground
   class Session
     getter tag : Int32
 
@@ -15,16 +14,16 @@ module Crystal::Playground
     end
 
     def self.instrument_and_prelude(session_key, port, tag, source, logger)
-      ast = Parser.new(source).parse
+      ast = Crystal::Parser.new(source).parse
 
       instrumented = Playground::AgentInstrumentorTransformer.transform(ast).to_s
       logger.info "Code instrumentation (session=#{session_key}, tag=#{tag}).\n#{instrumented}"
 
       prelude = %(
-        require "compiler/crystal/tools/playground/agent"
+        require "src/playground/agent"
 
-        class Crystal::Playground::Agent
-          @@instance = Crystal::Playground::Agent.new("ws://localhost:#{port}/agent/#{session_key}/#{tag}", #{tag})
+        class Playground::Agent
+          @@instance = Playground::Agent.new("ws://localhost:#{port}/agent/#{session_key}/#{tag}", #{tag})
 
           def self.instance
             @@instance
@@ -37,8 +36,8 @@ module Crystal::Playground
         )
 
       [
-        Compiler::Source.new("playground_prelude", prelude),
-        Compiler::Source.new("play", instrumented),
+        Crystal::Compiler::Source.new("playground_prelude", prelude),
+        Crystal::Compiler::Source.new("play", instrumented),
       ]
     end
 
@@ -54,7 +53,7 @@ module Crystal::Playground
       end
 
       output_filename = tempfile "play-#{@session_key}-#{tag}"
-      compiler = Compiler.new
+      compiler = Crystal::Compiler.new
       compiler.color = false
       begin
         @logger.info "Instrumented code compilation started (session=#{@session_key}, tag=#{tag})."
@@ -65,7 +64,7 @@ module Crystal::Playground
         # due to instrumentation, we compile the original program
         begin
           @logger.info "Original code compilation started (session=#{@session_key}, tag=#{tag})."
-          compiler.compile Compiler::Source.new("play", source), output_filename
+          compiler.compile Crystal::Compiler::Source.new("play", source), output_filename
         rescue ex
           @logger.info "Original code compilation failed (session=#{@session_key}, tag=#{tag})."
           send_exception ex, tag
@@ -218,7 +217,7 @@ module Crystal::Playground
     @resources = [] of Resource
 
     def render_with_layout(io, &block)
-      ECR.embed "#{__DIR__}/views/layout.html.ecr", io
+      ECR.embed "src/views/layout.html.ecr", io
     end
 
     protected def add_resource(kind, src)
@@ -312,7 +311,7 @@ module Crystal::Playground
 
     def to_s(io)
       render_with_layout(io) do
-        ECR.embed "#{__DIR__}/views/_workbook.html.ecr", io
+        ECR.embed "src/views/_workbook.html.ecr", io
         nil
       end
     end
@@ -454,7 +453,7 @@ module Crystal::Playground
     property host : String?
     property port
     property logger
-    property source : Compiler::Source?
+    property source : Crystal::Compiler::Source?
 
     def initialize
       @host = nil
@@ -465,9 +464,9 @@ module Crystal::Playground
     end
 
     def start
-      playground_dir = File.dirname(CrystalPath.new.find("compiler/crystal/tools/playground/server.cr").not_nil![0])
-      views_dir = File.join(playground_dir, "views")
-      public_dir = File.join(playground_dir, "public")
+      playground_dir = "src/"
+      views_dir = playground_dir + "views"
+      public_dir = playground_dir + "public"
 
       agent_ws = PathWebSocketHandler.new "/agent" do |ws, context|
         match_data = context.request.path.not_nil!.match(/\/(\d+)\/(\d+)$/).not_nil!
